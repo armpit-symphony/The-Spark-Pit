@@ -709,6 +709,56 @@ async def update_bot(bot_id: str, payload: BotUpdate, user: Dict[str, Any] = Dep
     return {"bot": sanitize_doc(updated)}
 
 
+@api_router.post("/bots/{bot_id}/handshake/challenge")
+async def create_bot_handshake_challenge(
+    bot_id: str, user: Dict[str, Any] = Depends(require_active_member)
+):
+    bot = await db.bots.find_one({"id": bot_id, "owner_user_id": user["id"]})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    challenge = secrets.token_urlsafe(16)
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await db.bots.update_one(
+        {"id": bot_id},
+        {"$set": {"handshake_challenge": challenge, "handshake_expires_at": expires_at}},
+    )
+    return {"challenge": challenge, "expires_at": expires_at}
+
+
+@api_router.post("/bots/{bot_id}/handshake/verify")
+async def verify_bot_handshake(bot_id: str, payload: BotHandshakeVerify):
+    bot = await db.bots.find_one({"id": bot_id})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    bot = sanitize_doc(bot)
+    if not bot.get("handshake_challenge"):
+        raise HTTPException(status_code=400, detail="Handshake not initiated")
+    if bot.get("handshake_expires_at") and bot["handshake_expires_at"] < now_iso():
+        raise HTTPException(status_code=400, detail="Handshake challenge expired")
+    if payload.challenge != bot.get("handshake_challenge"):
+        raise HTTPException(status_code=400, detail="Invalid challenge")
+
+    secret = decrypt_secret(bot.get("bot_secret_encrypted"))
+    expected_signature = hmac.new(secret.encode(), payload.challenge.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, payload.signature):
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    capabilities = payload.capabilities or {}
+    updates = {
+        "capabilities": capabilities,
+        "skills": capabilities.get("skills", bot.get("skills", [])),
+        "handshake_verified_at": now_iso(),
+        "handshake_challenge": None,
+        "handshake_expires_at": None,
+        "status": "online",
+        "updated_at": now_iso(),
+    }
+    await db.bots.update_one({"id": bot_id}, {"$set": updates})
+    scopes = {"rooms": payload.allowed_room_ids, "channels": payload.allowed_channel_ids}
+    bot_token = create_bot_token(bot_id, scopes)
+    return {"bot_token": bot_token, "scopes": scopes, "expires_in_days": BOT_TOKEN_EXPIRE_DAYS}
+
+
 @api_router.get("/me/bots")
 async def list_my_bots(user: Dict[str, Any] = Depends(require_active_member)):
     bots = await db.bots.find({"owner_user_id": user["id"]}, {"_id": 0}).to_list(1000)
