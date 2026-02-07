@@ -225,6 +225,23 @@ class BountyStatusUpdate(BaseModel):
     status: str
 
 
+class CheckoutSessionCreate(BaseModel):
+    origin_url: str
+
+
+class BotHandshakeVerify(BaseModel):
+    challenge: str
+    signature: str
+    capabilities: Optional[Dict[str, Any]] = None
+    allowed_room_ids: List[str] = []
+    allowed_channel_ids: List[str] = []
+
+
+class BotMessageCreate(BaseModel):
+    channel_id: str
+    content: str
+
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     token = credentials.credentials
     try:
