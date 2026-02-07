@@ -36,11 +36,15 @@ async def index_message(ctx, message):
     await db.message_index.update_one({"id": index_doc["id"]}, {"$set": index_doc}, upsert=True)
 
 
+async def process_bounty_status(ctx, payload):
+    logger.info("Processing bounty status %s", payload)
+
+
 async def generate_daily_room_summary(ctx, room_id="all"):
     logger.info("Generating daily summaries for room scope: %s", room_id)
 
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
-    functions = [process_audit_event, index_message, generate_daily_room_summary]
+    functions = [process_audit_event, index_message, process_bounty_status, generate_daily_room_summary]
     cron_jobs = [cron(generate_daily_room_summary, hour=2, minute=0)]
