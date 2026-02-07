@@ -78,6 +78,29 @@ def create_token(user: Dict[str, Any]) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def create_bot_token(bot_id: str, scopes: Dict[str, List[str]]) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=BOT_TOKEN_EXPIRE_DAYS)
+    payload = {"sub": bot_id, "type": "bot", "scopes": scopes, "exp": expire}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def get_fernet() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(BOT_SECRET_KEY.encode()).digest())
+    return Fernet(key)
+
+
+def encrypt_secret(secret_value: str) -> str:
+    return get_fernet().encrypt(secret_value.encode()).decode()
+
+
+def decrypt_secret(secret_value: str) -> str:
+    return get_fernet().decrypt(secret_value.encode()).decode()
+
+
+def generate_bot_secret() -> str:
+    return secrets.token_urlsafe(32)
+
+
 def sanitize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     if not doc:
         return doc
