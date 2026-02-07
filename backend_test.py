@@ -728,6 +728,11 @@ class SparkPitAPITester:
         # Admin features
         self.test_audit_feed()
         
+        # Ops Checklist tests
+        self.test_ops_checklist_endpoint()
+        self.test_ops_without_admin()
+        self.test_ops_with_non_admin()
+        
         # Activity feed tests
         self.test_activity_feed_global()
         self.test_activity_feed_room_filter()
