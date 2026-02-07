@@ -246,6 +246,7 @@ async def register(user: UserCreate):
         "updated_at": now,
     }
     await db.users.insert_one(user_doc)
+    user_doc = sanitize_doc(user_doc)
     token = create_token(user_doc)
     user_doc.pop("password_hash", None)
     return {"token": token, "user": user_doc}
@@ -317,6 +318,7 @@ async def create_invite_code(payload: InviteCodeCreate, admin: Dict[str, Any] = 
         "created_at": now,
     }
     await db.invite_codes.insert_one(code_doc)
+    code_doc = sanitize_doc(code_doc)
     await log_audit("invite.created", "user", admin["id"], payload={"code": code_value})
     return {"invite_code": code_doc}
 
@@ -346,6 +348,7 @@ async def create_room(payload: RoomCreate, user: Dict[str, Any] = Depends(requir
         "updated_at": now,
     }
     await db.rooms.insert_one(room_doc)
+    room_doc = sanitize_doc(room_doc)
     membership_doc = {
         "id": new_id(),
         "room_id": room_doc["id"],
@@ -364,6 +367,7 @@ async def create_room(payload: RoomCreate, user: Dict[str, Any] = Depends(requir
         "created_at": now,
     }
     await db.channels.insert_one(default_channel)
+    default_channel = sanitize_doc(default_channel)
     await log_audit("room.created", "user", user["id"], room_id=room_doc["id"], payload={"slug": payload.slug})
     await log_audit("room.joined", "user", user["id"], room_id=room_doc["id"], payload={"role": "owner"})
     return {"room": room_doc, "default_channel": default_channel}
@@ -472,6 +476,7 @@ async def create_channel(slug: str, payload: ChannelCreate, user: Dict[str, Any]
         "created_at": now_iso(),
     }
     await db.channels.insert_one(channel_doc)
+    channel_doc = sanitize_doc(channel_doc)
     await log_audit("channel.created", "user", user["id"], room_id=room["id"], channel_id=channel_doc["id"], payload={"slug": payload.slug})
     return {"channel": channel_doc}
 
@@ -527,6 +532,7 @@ async def post_message(
         "created_at": now_iso(),
     }
     await db.messages.insert_one(message_doc)
+    message_doc = sanitize_doc(message_doc)
     await log_audit("message.posted", "user", user["id"], room_id=channel["room_id"], channel_id=channel_id)
     await manager.broadcast(channel_id, {"type": "message_created", "message": message_doc})
     return {"message": message_doc}
@@ -552,6 +558,7 @@ async def create_bot(payload: BotCreate, user: Dict[str, Any] = Depends(require_
         "updated_at": now,
     }
     await db.bots.insert_one(bot_doc)
+    bot_doc = sanitize_doc(bot_doc)
     return {"bot": bot_doc}
 
 
@@ -609,6 +616,7 @@ async def create_bounty(payload: BountyCreate, user: Dict[str, Any] = Depends(re
         "updated_at": now,
     }
     await db.bounties.insert_one(bounty_doc)
+    bounty_doc = sanitize_doc(bounty_doc)
     await log_audit("bounty.created", "user", user["id"], room_id=payload.room_id, bounty_id=bounty_doc["id"])
     return {"bounty": bounty_doc}
 
@@ -678,6 +686,7 @@ async def create_bounty_update(
         "created_at": now_iso(),
     }
     await db.bounty_updates.insert_one(update_doc)
+    update_doc = sanitize_doc(update_doc)
     await log_audit("bounty.updated", "user", user["id"], bounty_id=bounty_id)
     return {"update": update_doc}
 
