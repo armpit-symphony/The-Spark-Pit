@@ -503,6 +503,88 @@ class SparkPitAPITester:
         """Test admin audit feed"""
         return self.run_test("Audit Feed", "GET", "admin/audit", 200, token=self.admin_token)
 
+    def test_activity_feed_global(self):
+        """Test activity feed without room filter"""
+        success, response = self.run_test(
+            "Activity Feed (Global)", "GET", "activity", 200, token=self.admin_token
+        )
+        
+        if success and 'items' in response:
+            events = response['items']
+            print(f"   Found {len(events)} activity events")
+            
+            # Check if events have required fields
+            for event in events[:3]:  # Check first 3 events
+                required_fields = ['id', 'event_type', 'actor_type', 'actor_id', 'created_at']
+                for field in required_fields:
+                    if field not in event:
+                        print(f"   ❌ Missing field '{field}' in event")
+                        return False
+                        
+                # Check if event_type is in whitelist
+                whitelisted_events = [
+                    "room.created", "room.joined", "bot.joined", 
+                    "bounty.created", "bounty.claimed", "bounty.submitted", "bounty.approved"
+                ]
+                if event['event_type'] not in whitelisted_events:
+                    print(f"   ❌ Event type '{event['event_type']}' not in whitelist")
+                    return False
+                    
+            print(f"   ✅ All events have required fields and whitelisted types")
+            return True
+        return success
+
+    def test_activity_feed_room_filter(self):
+        """Test activity feed with room filter"""
+        if not self.room_id:
+            print("   ⚠️ No room available for filtering test")
+            return True  # Skip if no room
+            
+        success, response = self.run_test(
+            "Activity Feed (Room Filter)", "GET", "activity", 200, 
+            token=self.admin_token, params={"room_id": self.room_id}
+        )
+        
+        if success and 'items' in response:
+            events = response['items']
+            print(f"   Found {len(events)} room-specific events")
+            
+            # Check that all events are either room-specific or global
+            for event in events:
+                if event.get('room_id') and event['room_id'] != self.room_id:
+                    print(f"   ❌ Found event from different room: {event['room_id']}")
+                    return False
+                    
+            print(f"   ✅ All events are for the correct room or global")
+            return True
+        return success
+
+    def test_activity_feed_unauthorized(self):
+        """Test activity feed requires active membership"""
+        # Create a new pending user
+        timestamp = datetime.now().strftime('%H%M%S')
+        pending_user_data = {
+            "email": f"pending_activity_{timestamp}@sparkpit.test",
+            "handle": f"pending_activity_{timestamp}",
+            "password": "PendingPass123!"
+        }
+        
+        success, response = self.run_test(
+            "Create Pending User for Activity Test", "POST", "auth/register", 200, pending_user_data
+        )
+        
+        if not success:
+            return False
+            
+        pending_token = response['token']
+        
+        # Try to access activity feed - should fail with 403
+        success, _ = self.run_test(
+            "Activity Feed (Unauthorized)", "GET", "activity", 403, token=pending_token
+        )
+        
+        return success
+
     def test_membership_gate_protection(self):
         """Test that pending users can't access protected endpoints"""
         # Create a new pending user
