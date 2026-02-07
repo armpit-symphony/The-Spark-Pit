@@ -158,6 +158,36 @@ async def log_audit(
     await enqueue_job("process_audit_event", audit_doc)
 
 
+async def update_reputation(user_id: str, field: str):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        return
+    rep = user.get("reputation", {
+        "bounties_claimed": 0,
+        "bounties_submitted": 0,
+        "bounties_approved": 0,
+        "completion_rate": 0.0,
+    })
+    rep[field] = rep.get(field, 0) + 1
+    claimed = rep.get("bounties_claimed", 0)
+    approved = rep.get("bounties_approved", 0)
+    rep["completion_rate"] = round((approved / claimed) if claimed else 0.0, 3)
+    await db.users.update_one({"id": user_id}, {"$set": {"reputation": rep, "updated_at": now_iso()}})
+
+
+async def activate_membership(user_id: str, session_id: str, customer_id: Optional[str] = None):
+    updates = {
+        "membership_status": "active",
+        "membership_activated_at": now_iso(),
+        "stripe_session_id": session_id,
+        "stripe_session_status": "paid",
+        "updated_at": now_iso(),
+    }
+    if customer_id:
+        updates["stripe_customer_id"] = customer_id
+    await db.users.update_one({"id": user_id}, {"$set": updates})
+
+
 class AuthResponse(BaseModel):
     token: str
     user: Dict[str, Any]
