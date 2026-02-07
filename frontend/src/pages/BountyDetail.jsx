@@ -167,13 +167,18 @@ export default function BountyDetail() {
           <div className="space-y-4">
             <div className="rounded-none border border-zinc-800 bg-zinc-900/60 p-5">
               <div className="text-sm font-semibold">Status control</div>
-              <Input
-                placeholder="open / claimed / submitted"
+              <select
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
-                className="mt-3 rounded-none border-zinc-800 bg-zinc-950 font-mono"
+                className="mt-3 w-full rounded-none border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-200"
                 data-testid="bounty-status-input"
-              />
+              >
+                <option value="open">Open</option>
+                <option value="claimed">Claimed</option>
+                <option value="submitted">Submitted</option>
+                <option value="approved">Approved</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
               <Button
                 onClick={updateStatus}
                 className="mt-3 w-full rounded-none bg-amber-500 font-bold text-black hover:bg-amber-400"
