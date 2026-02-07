@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Zap, MessageSquare, Bot, Briefcase, Settings, Shield } from "lucide-react";
+import { MessageSquare, Bot, Briefcase, Settings, Shield } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppData } from "@/components/layout/AppShell";
 import { toast } from "@/components/ui/sonner";
