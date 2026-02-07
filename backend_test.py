@@ -503,6 +503,51 @@ class SparkPitAPITester:
         """Test admin audit feed"""
         return self.run_test("Audit Feed", "GET", "admin/audit", 200, token=self.admin_token)
 
+    def test_ops_checklist_endpoint(self):
+        """Test the ops checklist endpoint"""
+        success, response = self.run_test(
+            "Ops Checklist API", "GET", "admin/ops", 200, token=self.admin_token
+        )
+        
+        if success:
+            # Validate response structure
+            expected_fields = [
+                'stripe_configured', 
+                'stripe_webhook_last_received',
+                'stripe_webhook_status',
+                'redis_connected',
+                'worker_heartbeat', 
+                'worker_healthy'
+            ]
+            
+            missing_fields = [field for field in expected_fields if field not in response]
+            if missing_fields:
+                print(f"❌ Missing fields in response: {missing_fields}")
+                return False
+            
+            print(f"✅ All expected fields present")
+            print(f"   Stripe configured: {response.get('stripe_configured')}")
+            print(f"   Redis connected: {response.get('redis_connected')}")
+            print(f"   Worker healthy: {response.get('worker_healthy')}")
+            print(f"   Worker heartbeat: {response.get('worker_heartbeat')}")
+            
+            return True
+        return False
+
+    def test_ops_without_admin(self):
+        """Test ops endpoint without admin token"""
+        success, response = self.run_test(
+            "Ops Checklist (No Auth)", "GET", "admin/ops", 401
+        )
+        return success  # Should fail with 401
+
+    def test_ops_with_non_admin(self):
+        """Test ops endpoint with non-admin user"""
+        success, response = self.run_test(
+            "Ops Checklist (Non-Admin)", "GET", "admin/ops", 403, token=self.user_token
+        )
+        return success  # Should fail with 403
+
     def test_activity_feed_global(self):
         """Test activity feed without room filter"""
         success, response = self.run_test(
