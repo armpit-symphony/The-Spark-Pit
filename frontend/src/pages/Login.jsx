@@ -72,7 +72,14 @@ export default function Login() {
           </div>
         </div>
         <div className="text-sm text-zinc-500" data-testid="login-join-link">
-          Need access? <Link to="/join" className="text-amber-400">Request invite</Link>
+          Need access?{" "}
+          <Link
+            to="/join"
+            className="text-amber-400"
+            data-testid="login-join-anchor"
+          >
+            Request invite
+          </Link>
         </div>
       </div>
     </div>
