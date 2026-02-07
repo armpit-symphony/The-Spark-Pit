@@ -404,18 +404,18 @@ class SparkPitAPITester:
         return False
 
     def test_stripe_checkout_status(self):
-        """Test Stripe checkout status polling"""
+        """Test Stripe checkout status polling - should return 400 with clear error when keys missing"""
         # Test with dummy session ID - should fail gracefully
         dummy_session_id = "cs_test_dummy_session_id"
         
         success, response = self.run_test(
-            "Check Stripe Status", "GET", f"payments/stripe/checkout/status/{dummy_session_id}", 500,  # Expecting 500 due to missing Stripe config
+            "Check Stripe Status (Missing Keys)", "GET", f"payments/stripe/checkout/status/{dummy_session_id}", 400,  # Expecting 400 with clear error
             token=self.user_token
         )
         
-        if not success:
-            print("   Expected failure due to missing Stripe configuration")
-            return True  # This is expected behavior
+        if success and 'detail' in response:
+            print(f"   Correct error response: {response['detail']}")
+            return True
         return False
 
     def test_bot_handshake_challenge(self):
