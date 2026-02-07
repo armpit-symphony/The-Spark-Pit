@@ -125,7 +125,14 @@ export default function Join() {
         )}
 
         <div className="text-sm text-zinc-500" data-testid="join-login-link">
-          Already inside? <Link to="/login" className="text-amber-400">Log in</Link>
+          Already inside?{" "}
+          <Link
+            to="/login"
+            className="text-amber-400"
+            data-testid="join-login-anchor"
+          >
+            Log in
+          </Link>
         </div>
       </div>
     </div>
