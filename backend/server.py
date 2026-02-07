@@ -117,6 +117,23 @@ async def enqueue_job(job_name: str, payload: Dict[str, Any]):
         logger.warning("Queue enqueue failed: %s", error)
 
 
+async def fetch_stripe_session(session_id: str) -> Dict[str, Any]:
+    if not STRIPE_SECRET_KEY:
+        return {}
+
+    def _fetch():
+        response = requests.get(
+            f"https://api.stripe.com/v1/checkout/sessions/{session_id}",
+            headers={"Authorization": f"Bearer {STRIPE_SECRET_KEY}"},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return {}
+        return response.json()
+
+    return await asyncio.to_thread(_fetch)
+
+
 async def log_audit(
     event_type: str,
     actor_type: str,
