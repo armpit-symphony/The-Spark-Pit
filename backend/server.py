@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -497,7 +498,7 @@ async def create_checkout_session(
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
+        return JSONResponse(status_code=500, content={"detail": "Stripe not configured"})
     if user.get("membership_status") == "active":
         raise HTTPException(status_code=400, detail="Membership already active")
     if not payload.origin_url:
@@ -547,7 +548,7 @@ async def create_checkout_session(
 @api_router.get("/payments/stripe/checkout/status/{session_id}")
 async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=500, detail="Stripe not configured")
+        return JSONResponse(status_code=500, content={"detail": "Stripe not configured"})
     stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_secret=STRIPE_WEBHOOK_SECRET)
     status_response = await stripe_checkout.get_checkout_status(session_id)
 
@@ -587,7 +588,7 @@ async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_cu
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
-        raise HTTPException(status_code=500, detail="Stripe webhook not configured")
+        return JSONResponse(status_code=500, content={"detail": "Stripe webhook not configured"})
     payload = await request.body()
     signature = request.headers.get("Stripe-Signature")
     stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_secret=STRIPE_WEBHOOK_SECRET)
