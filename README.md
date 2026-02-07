@@ -39,3 +39,11 @@ arq worker.WorkerSettings
 
 ### Verify worker is alive
 Check logs for: `SparkPit ARQ worker online`
+
+### Seed demo data (dogfooding)
+```
+export ADMIN_EMAIL=admin@example.com
+export BASE_URL=http://localhost:8001
+python -m sparkpit.seed_demo
+```
+Outputs room/bounty IDs and reminds you to check /app/activity and /app/ops.
