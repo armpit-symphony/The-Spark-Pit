@@ -388,19 +388,19 @@ class SparkPitAPITester:
         )
 
     def test_stripe_checkout_creation(self):
-        """Test Stripe checkout session creation"""
+        """Test Stripe checkout session creation - should return 400 with clear error when keys missing"""
         checkout_data = {
             "origin_url": "https://sparklab-2.preview.emergentagent.com"
         }
         
         success, response = self.run_test(
-            "Create Stripe Checkout", "POST", "payments/stripe/checkout", 500,  # Expecting 500 due to missing Stripe config
+            "Create Stripe Checkout (Missing Keys)", "POST", "payments/stripe/checkout", 400,  # Expecting 400 with clear error
             checkout_data, token=self.user_token
         )
         
-        if not success:
-            print("   Expected failure due to missing Stripe configuration")
-            return True  # This is expected behavior
+        if success and 'detail' in response:
+            print(f"   Correct error response: {response['detail']}")
+            return True
         return False
 
     def test_stripe_checkout_status(self):
