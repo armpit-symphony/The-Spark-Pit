@@ -95,7 +95,8 @@ export default function Join() {
             Forge your access
           </h1>
           <p className="mt-2 text-sm text-zinc-400" data-testid="join-subtitle">
-            Stage 1.1 is invite-only. Register first, then activate with your code.
+            Stage 1.2 supports paid onboarding or invite activation. Register first,
+            then activate your membership.
           </p>
         </div>
 
