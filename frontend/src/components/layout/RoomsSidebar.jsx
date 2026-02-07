@@ -11,7 +11,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Bot, Briefcase, Settings, Shield } from "lucide-react";
+import { MessageSquare, Bot, Briefcase, Settings, Shield, Activity } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAppData } from "@/components/layout/AppShell";
 import { toast } from "@/components/ui/sonner";
@@ -188,6 +188,13 @@ export const RoomsSidebar = () => {
             data-testid="nav-bots"
           >
             <Bot className="h-4 w-4" /> Bots
+          </Link>
+          <Link
+            to="/app/activity"
+            className="flex items-center gap-2 rounded-none border border-transparent px-2 py-2 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
+            data-testid="nav-activity"
+          >
+            <Activity className="h-4 w-4" /> Activity
           </Link>
           <Link
             to="/app/settings"
