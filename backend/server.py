@@ -288,6 +288,23 @@ async def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dic
     return user
 
 
+async def get_current_bot(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid bot token")
+    if payload.get("type") != "bot":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bot token required")
+    bot_id = payload.get("sub")
+    bot = await db.bots.find_one({"id": bot_id})
+    if not bot:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bot not found")
+    bot = sanitize_doc(bot)
+    bot["scopes"] = payload.get("scopes", {})
+    return bot
+
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
