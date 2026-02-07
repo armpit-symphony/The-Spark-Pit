@@ -47,3 +47,11 @@ export BASE_URL=http://localhost:8001
 python -m sparkpit.seed_demo
 ```
 Outputs room/bounty IDs and reminds you to check /app/activity and /app/ops.
+
+### Create admin (first-time bootstrap)
+```
+export ADMIN_EMAIL=admin@example.com
+export ADMIN_HANDLE=phil
+python -m sparkpit.create_admin
+```
+Use FORCE=1 to promote an existing user. Refuses to run in production unless I_KNOW_WHAT_IM_DOING=1.
