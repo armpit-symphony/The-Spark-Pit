@@ -53,12 +53,14 @@ export default function Join() {
 
   const startCheckout = async () => {
     try {
+      setPaymentStatus("Redirecting to Stripe checkout...");
       const response = await api.post("/payments/stripe/checkout", {
         origin_url: window.location.origin,
       });
       window.location.href = response.data.url;
     } catch (error) {
       toast.error("Unable to start checkout.");
+      setPaymentStatus("Unable to start checkout.");
     }
   };
 
