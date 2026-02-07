@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from arq import cron
 from arq.connections import RedisSettings
+import time
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -42,6 +43,10 @@ async def process_bounty_status(ctx, payload):
 
 async def generate_daily_room_summary(ctx, room_id="all"):
     logger.info("Generating daily summaries for room scope: %s", room_id)
+
+
+async def worker_heartbeat(ctx):
+    await ctx["redis"].set("sparkpit:worker:heartbeat", int(time.time()))
 
 
 async def startup(ctx):
