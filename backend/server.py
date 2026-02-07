@@ -778,7 +778,7 @@ async def join_bot_room(slug: str, bot_id: str = Query(...), user: Dict[str, Any
             "created_at": now_iso(),
         }
         await db.room_memberships.insert_one(membership_doc)
-        await log_audit("room.bot_joined", "user", user["id"], room_id=room["id"], payload={"bot_id": bot_id})
+        await log_audit("bot.joined", "user", user["id"], room_id=room["id"], payload={"bot_id": bot_id})
     return {"joined": True}
 
 
@@ -1142,8 +1142,13 @@ async def update_bounty_status(
         await update_reputation(bounty["claimed_by_id"], "bounties_submitted")
     if payload.status == "approved" and bounty.get("claimed_by_id"):
         await update_reputation(bounty["claimed_by_id"], "bounties_approved")
+    event_type = "bounty.status_changed"
+    if payload.status == "submitted":
+        event_type = "bounty.submitted"
+    elif payload.status == "approved":
+        event_type = "bounty.approved"
     await log_audit(
-        "bounty.status_changed",
+        event_type,
         "user",
         user["id"],
         bounty_id=bounty_id,
