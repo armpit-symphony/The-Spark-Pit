@@ -108,6 +108,15 @@ def sanitize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     return doc
 
 
+async def enqueue_job(job_name: str, payload: Dict[str, Any]):
+    if not redis_pool:
+        return
+    try:
+        await redis_pool.enqueue_job(job_name, payload)
+    except Exception as error:
+        logger.warning("Queue enqueue failed: %s", error)
+
+
 async def log_audit(
     event_type: str,
     actor_type: str,
@@ -129,6 +138,7 @@ async def log_audit(
         "created_at": now_iso(),
     }
     await db.audit_events.insert_one(audit_doc)
+    await enqueue_job("process_audit_event", audit_doc)
 
 
 class AuthResponse(BaseModel):
