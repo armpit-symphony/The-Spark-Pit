@@ -480,6 +480,152 @@ async def audit_feed(room_id: Optional[str] = None, admin: Dict[str, Any] = Depe
     return {"items": events}
 
 
+@api_router.post("/payments/stripe/checkout")
+async def create_checkout_session(
+    payload: CheckoutSessionCreate,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    if user.get("membership_status") == "active":
+        raise HTTPException(status_code=400, detail="Membership already active")
+
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url=webhook_url)
+    success_url = f"{payload.origin_url}/join?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{payload.origin_url}/join?canceled=true"
+    metadata = {"user_id": user["id"], "email": user["email"], "purpose": "join_fee"}
+
+    checkout_request = CheckoutSessionRequest(
+        amount=float(JOIN_FEE_AMOUNT),
+        currency=JOIN_FEE_CURRENCY,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+    )
+    session = await stripe_checkout.create_checkout_session(checkout_request)
+
+    payment_doc = {
+        "id": new_id(),
+        "user_id": user["id"],
+        "session_id": session.session_id,
+        "amount": JOIN_FEE_AMOUNT,
+        "currency": JOIN_FEE_CURRENCY,
+        "status": "initiated",
+        "payment_status": "unpaid",
+        "metadata": metadata,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    await db.payment_transactions.insert_one(payment_doc)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"stripe_session_id": session.session_id, "stripe_session_status": "initiated"}},
+    )
+
+    return {"url": session.url, "session_id": session.session_id}
+
+
+@api_router.get("/payments/stripe/checkout/status/{session_id}")
+async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    host_url = ""
+    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url=host_url)
+    status_response = await stripe_checkout.get_checkout_status(session_id)
+
+    transaction = await db.payment_transactions.find_one({"session_id": session_id})
+    transaction = sanitize_doc(transaction) if transaction else None
+    new_status = status_response.status
+    payment_status = status_response.payment_status
+    updates = {
+        "status": new_status,
+        "payment_status": payment_status,
+        "updated_at": now_iso(),
+    }
+    if transaction:
+        await db.payment_transactions.update_one({"session_id": session_id}, {"$set": updates})
+
+    if payment_status == "paid":
+        session_details = await fetch_stripe_session(session_id)
+        customer_id = session_details.get("customer") if session_details else None
+        await activate_membership(user["id"], session_id, customer_id)
+    elif new_status in ["expired", "canceled"]:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"stripe_session_status": new_status, "updated_at": now_iso()}},
+        )
+
+    return {
+        "status": status_response.status,
+        "payment_status": status_response.payment_status,
+        "amount_total": status_response.amount_total,
+        "currency": status_response.currency,
+        "metadata": status_response.metadata,
+    }
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500, detail="Stripe webhook not configured")
+    payload = await request.body()
+    signature = request.headers.get("Stripe-Signature")
+    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url="")
+    webhook_event = await stripe_checkout.handle_webhook(payload, signature)
+
+    session_id = webhook_event.session_id
+    if not session_id:
+        return {"received": True}
+
+    transaction = await db.payment_transactions.find_one({"session_id": session_id})
+    if transaction and transaction.get("status") == "paid":
+        return {"received": True, "idempotent": True}
+
+    new_status = webhook_event.event_type
+    payment_status = webhook_event.payment_status or "unknown"
+    session_details = await fetch_stripe_session(session_id)
+    customer_id = session_details.get("customer") if session_details else None
+    metadata = webhook_event.metadata or {}
+    user_id = metadata.get("user_id") if metadata else None
+
+    if webhook_event.event_type == "checkout.session.completed":
+        if user_id:
+            await activate_membership(user_id, session_id, customer_id)
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "status": "paid",
+                    "payment_status": payment_status,
+                    "updated_at": now_iso(),
+                    "stripe_customer_id": customer_id,
+                }
+            },
+        )
+    elif webhook_event.event_type in ["checkout.session.expired", "charge.refunded"]:
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {
+                "$set": {
+                    "status": "expired" if webhook_event.event_type == "checkout.session.expired" else "refunded",
+                    "payment_status": payment_status,
+                    "updated_at": now_iso(),
+                    "stripe_customer_id": customer_id,
+                }
+            },
+        )
+        if user_id:
+            await db.users.update_one(
+                {"id": user_id},
+                {"$set": {"membership_status": "pending", "stripe_session_status": "expired", "updated_at": now_iso()}},
+            )
+
+    return {"received": True}
+
+
 @api_router.post("/rooms")
 async def create_room(payload: RoomCreate, user: Dict[str, Any] = Depends(require_active_member)):
     existing = await db.rooms.find_one({"slug": payload.slug})
