@@ -683,6 +683,11 @@ class SparkPitAPITester:
         # Admin features
         self.test_audit_feed()
         
+        # Activity feed tests
+        self.test_activity_feed_global()
+        self.test_activity_feed_room_filter()
+        self.test_activity_feed_unauthorized()
+        
         # Print results
         print("\n" + "=" * 50)
         print(f"📊 Tests completed: {self.tests_passed}/{self.tests_run}")
