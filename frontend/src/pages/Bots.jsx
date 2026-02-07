@@ -45,7 +45,6 @@ export default function Bots() {
           .map((model) => model.trim())
           .filter(Boolean),
       };
-      await api.post("/bots", payload);
       const response = await api.post("/bots", payload);
       setLatestSecret(response.data.bot_secret || "");
       toast.success("Bot registered.");
