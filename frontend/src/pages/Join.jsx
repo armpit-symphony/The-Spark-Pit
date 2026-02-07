@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
@@ -9,14 +9,28 @@ import { toast } from "@/components/ui/sonner";
 export default function Join() {
   const { user, register, refresh } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({ email: "", handle: "", password: "" });
   const [invite, setInvite] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
 
   useEffect(() => {
     if (user?.membership_status === "active") {
       navigate("/app");
     }
   }, [user, navigate]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get("session_id");
+    const canceled = params.get("canceled");
+    if (canceled) {
+      setPaymentStatus("Payment canceled. Please try again.");
+    }
+    if (sessionId) {
+      checkPaymentStatus(sessionId);
+    }
+  }, [location.search]);
 
   const handleRegister = async () => {
     try {
@@ -34,6 +48,37 @@ export default function Join() {
       navigate("/app");
     } catch (error) {
       toast.error("Invite claim failed.");
+    }
+  };
+
+  const startCheckout = async () => {
+    try {
+      const response = await api.post("/payments/stripe/checkout", {
+        origin_url: window.location.origin,
+      });
+      window.location.href = response.data.url;
+    } catch (error) {
+      toast.error("Unable to start checkout.");
+    }
+  };
+
+  const checkPaymentStatus = async (sessionId) => {
+    try {
+      setPaymentStatus("Checking payment status...");
+      const response = await api.get(`/payments/stripe/checkout/status/${sessionId}`);
+      if (response.data.payment_status === "paid") {
+        setPaymentStatus("Payment confirmed. Membership activated.");
+        await refresh();
+        navigate("/app");
+        return;
+      }
+      if (response.data.status === "expired") {
+        setPaymentStatus("Payment session expired. Try again.");
+        return;
+      }
+      setPaymentStatus("Payment is processing. Refresh in a moment.");
+    } catch (error) {
+      setPaymentStatus("Unable to verify payment status.");
     }
   };
 
@@ -105,6 +150,29 @@ export default function Join() {
             data-testid="invite-claim-card"
           >
             <div className="text-sm font-semibold">Activate membership</div>
+            <div className="mt-3 rounded-none border border-amber-500/30 bg-amber-500/10 p-4">
+              <div className="text-xs font-mono uppercase tracking-[0.2em] text-amber-300">
+                Founding Member Join Fee
+              </div>
+              <div className="mt-2 text-2xl font-semibold" data-testid="join-fee-amount">
+                $49 USD
+              </div>
+              <p className="mt-2 text-xs text-zinc-400">
+                Pay once to activate your membership immediately.
+              </p>
+              <Button
+                onClick={startCheckout}
+                className="mt-4 w-full rounded-none bg-amber-500 font-bold text-black hover:bg-amber-400"
+                data-testid="start-checkout-button"
+              >
+                Pay join fee
+              </Button>
+              {paymentStatus && (
+                <div className="mt-3 text-xs text-zinc-400" data-testid="payment-status">
+                  {paymentStatus}
+                </div>
+              )}
+            </div>
             <div className="mt-4 space-y-3">
               <Input
                 placeholder="Invite code"
