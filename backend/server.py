@@ -1220,6 +1220,7 @@ async def update_bounty_status(
         {"id": bounty_id},
         {"$set": {"status": payload.status, "updated_at": now_iso()}},
     )
+    await enqueue_job("process_bounty_status", {"bounty_id": bounty_id, "status": payload.status})
     if payload.status == "submitted" and bounty.get("claimed_by_id"):
         await update_reputation(bounty["claimed_by_id"], "bounties_submitted")
     if payload.status == "approved" and bounty.get("claimed_by_id"):
