@@ -501,6 +501,78 @@ async def audit_feed(room_id: Optional[str] = None, admin: Dict[str, Any] = Depe
     return {"items": events}
 
 
+@api_router.get("/activity")
+async def activity_feed(
+    room_id: Optional[str] = None,
+    since: Optional[str] = None,
+    user: Dict[str, Any] = Depends(require_active_member),
+):
+    memberships = await db.room_memberships.find(
+        {"member_type": "user", "member_id": user["id"]}, {"_id": 0}
+    ).to_list(1000)
+    allowed_room_ids = {m["room_id"] for m in memberships}
+    query: Dict[str, Any] = {"event_type": {"$in": ACTIVITY_EVENTS}}
+    if room_id:
+        if room_id not in allowed_room_ids:
+            room = await db.rooms.find_one({"id": room_id})
+            if not room or not room.get("is_public"):
+                raise HTTPException(status_code=403, detail="Access denied")
+        query["room_id"] = room_id
+    else:
+        query["$or"] = [{"room_id": {"$in": list(allowed_room_ids)}}, {"room_id": None}]
+    if since:
+        query["created_at"] = {"$gt": since}
+
+    events = await db.audit_events.find(query, {"_id": 0}).sort("created_at", -1).to_list(50)
+
+    user_ids = {event["actor_id"] for event in events if event.get("actor_type") == "user"}
+    bot_ids = {event["actor_id"] for event in events if event.get("actor_type") == "bot"}
+    room_ids = {event.get("room_id") for event in events if event.get("room_id")}
+    bounty_ids = {event.get("bounty_id") for event in events if event.get("bounty_id")}
+    payload_bot_ids = {
+        event.get("payload", {}).get("bot_id")
+        for event in events
+        if event.get("payload", {}).get("bot_id")
+    }
+
+    users = {
+        user_doc["id"]: sanitize_doc(user_doc)
+        for user_doc in await db.users.find({"id": {"$in": list(user_ids)}}).to_list(200)
+    }
+    bots = {
+        bot_doc["id"]: sanitize_bot(bot_doc)
+        for bot_doc in await db.bots.find({"id": {"$in": list(bot_ids | payload_bot_ids)}}).to_list(200)
+    }
+    rooms = {
+        room_doc["id"]: sanitize_doc(room_doc)
+        for room_doc in await db.rooms.find({"id": {"$in": list(room_ids)}}).to_list(200)
+    }
+    bounties = {
+        bounty_doc["id"]: sanitize_doc(bounty_doc)
+        for bounty_doc in await db.bounties.find({"id": {"$in": list(bounty_ids)}}).to_list(200)
+    }
+
+    enriched_events = []
+    for event in events:
+        actor = None
+        if event.get("actor_type") == "user":
+            actor = users.get(event.get("actor_id"))
+        if event.get("actor_type") == "bot":
+            actor = bots.get(event.get("actor_id"))
+        room = rooms.get(event.get("room_id")) if event.get("room_id") else None
+        bounty = bounties.get(event.get("bounty_id")) if event.get("bounty_id") else None
+        bot = bots.get(event.get("payload", {}).get("bot_id")) if event.get("payload") else None
+        enriched_events.append({
+            **event,
+            "actor": actor,
+            "room": room,
+            "bounty": bounty,
+            "bot": bot,
+        })
+
+    return {"items": enriched_events}
+
+
 @api_router.post("/payments/stripe/checkout")
 async def create_checkout_session(
     payload: CheckoutSessionCreate,
