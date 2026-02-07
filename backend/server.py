@@ -108,6 +108,16 @@ def sanitize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     return doc
 
 
+def sanitize_bot(bot: Dict[str, Any]) -> Dict[str, Any]:
+    bot = sanitize_doc(bot)
+    if not bot:
+        return bot
+    bot.pop("bot_secret_encrypted", None)
+    bot.pop("handshake_challenge", None)
+    bot.pop("handshake_expires_at", None)
+    return bot
+
+
 async def enqueue_job(job_name: str, payload: Dict[str, Any]):
     if not redis_pool:
         return
