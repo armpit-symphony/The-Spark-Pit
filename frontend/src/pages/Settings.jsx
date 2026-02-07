@@ -14,6 +14,7 @@ export default function Settings() {
   const [inviteCode, setInviteCode] = useState(null);
   const [maxUses, setMaxUses] = useState(1);
   const [auditEvents, setAuditEvents] = useState([]);
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     setSecondaryPanel(<QuickPanel />);
@@ -55,10 +56,10 @@ export default function Settings() {
   };
 
   useEffect(() => {
-    if (user?.role === "admin") {
+    if (isAdmin) {
       loadAudit();
     }
-  }, [user?.role]);
+  }, [isAdmin]);
 
   return (
     <div className="flex h-full flex-col" data-testid="settings-page">
@@ -126,6 +127,7 @@ export default function Settings() {
                 <Button
                   onClick={generateInvite}
                   className="rounded-none bg-cyan-500 text-black hover:bg-cyan-400"
+                  disabled={!isAdmin}
                   data-testid="invite-generate-button"
                 >
                   Generate
@@ -143,7 +145,7 @@ export default function Settings() {
 
             <div className="rounded-none border border-zinc-800 bg-zinc-900/60 p-5" data-testid="audit-card">
               <div className="text-sm font-semibold">Audit feed</div>
-              {user?.role !== "admin" ? (
+              {!isAdmin ? (
                 <div className="mt-3 text-xs text-zinc-500" data-testid="audit-restricted">
                   Admin role required.
                 </div>
