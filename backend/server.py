@@ -350,6 +350,16 @@ async def register(user: UserCreate):
         "role": role,
         "membership_status": membership_status,
         "joined_at": now if membership_status == "active" else None,
+        "membership_activated_at": now if membership_status == "active" else None,
+        "stripe_customer_id": None,
+        "stripe_session_id": None,
+        "stripe_session_status": None,
+        "reputation": {
+            "bounties_claimed": 0,
+            "bounties_submitted": 0,
+            "bounties_approved": 0,
+            "completion_rate": 0.0,
+        },
         "created_at": now,
         "updated_at": now,
     }
