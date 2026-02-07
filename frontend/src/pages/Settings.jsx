@@ -122,6 +122,7 @@ export default function Settings() {
                   value={maxUses}
                   onChange={(event) => setMaxUses(event.target.value)}
                   className="w-24 rounded-none border-zinc-800 bg-zinc-950 font-mono"
+                  disabled={!isAdmin}
                   data-testid="invite-max-uses-input"
                 />
                 <Button
