@@ -379,8 +379,8 @@ async def register(user: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email or handle already exists")
 
-    user_count = await db.users.count_documents({})
-    role = "admin" if user_count == 0 else "member"
+    admin_count = await db.users.count_documents({"role": "admin"})
+    role = "admin" if admin_count == 0 else "member"
     membership_status = "active" if role == "admin" else "pending"
     now = now_iso()
     user_doc = {
