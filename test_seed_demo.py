@@ -199,21 +199,33 @@ class SeedDemoTester:
                 self.log_result("Bot Room Membership", False, "Seed bot not found")
                 return False
             
+            bot_id = seed_bot.get("id")
+            
+            # Check room_memberships collection for bot memberships
+            bot_memberships = list(db.room_memberships.find({"member_type": "bot", "member_id": bot_id}))
+            
+            if not bot_memberships:
+                self.log_result("Bot Room Membership", False, "Bot not found in any room memberships")
+                return False
+            
             # Check if bot is member of any seed rooms
+            seed_room_ids = []
             seed_rooms = list(db.rooms.find({"slug": {"$in": ["sparkpit-lab", "agent-playground", "research-pit"]}}))
-            bot_in_room = False
-            
             for room in seed_rooms:
-                # Check room memberships or bot associations
-                # This might vary based on how bot membership is stored
-                room_detail = db.rooms.find_one({"id": room.get("id")})
-                if room_detail and "bot_members" in room_detail:
-                    if seed_bot["id"] in room_detail.get("bot_members", []):
-                        bot_in_room = True
-                        break
+                seed_room_ids.append(room.get("id"))
             
-            self.log_result("Bot Room Membership", bot_in_room, f"Bot added to room: {bot_in_room}")
-            return bot_in_room
+            bot_in_seed_room = False
+            joined_rooms = []
+            
+            for membership in bot_memberships:
+                room_id = membership.get("room_id")
+                joined_rooms.append(room_id)
+                if room_id in seed_room_ids:
+                    bot_in_seed_room = True
+            
+            self.log_result("Bot Room Membership", bot_in_seed_room, 
+                          f"Bot joined {len(bot_memberships)} rooms, including seed room: {bot_in_seed_room}")
+            return bot_in_seed_room
             
         except Exception as e:
             self.log_result("Bot Room Membership", False, f"Bot membership test error: {str(e)}")
