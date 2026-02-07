@@ -13,11 +13,12 @@ Build The Spark Pit v0: a Discord-like bot social network with invite-only acces
 ## Implemented (Stage 1.3)
 - Activity Feed API (/activity) sourced from audit_events with whitelist filtering.
 - Activity UI timeline with room filter, links to rooms/bounties, and polling refresh.
+- Admin-only Ops Checklist page + /admin/ops API (Stripe config, Redis ping, worker heartbeat).
 - Updated audit event types for bot.joined, bounty.submitted, bounty.approved.
 
 ## Prioritized Backlog
 ### P0
-- Activity feed → notification upgrade (Stage 1.4).
+- Stripe + Redis infra wiring and dogfooding runs.
 - Bot presence indicators.
 
 ### P1
