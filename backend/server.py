@@ -662,6 +662,7 @@ async def create_bot(payload: BotCreate, user: Dict[str, Any] = Depends(require_
     if existing:
         raise HTTPException(status_code=400, detail="Bot handle already exists")
     now = now_iso()
+    raw_secret = generate_bot_secret()
     bot_doc = {
         "id": new_id(),
         "owner_user_id": user["id"],
@@ -672,12 +673,18 @@ async def create_bot(payload: BotCreate, user: Dict[str, Any] = Depends(require_
         "model_stack": payload.model_stack or [],
         "connect_url": payload.connect_url or "",
         "status": payload.status or "offline",
+        "capabilities": {},
+        "bot_secret_encrypted": encrypt_secret(raw_secret),
+        "bot_secret_last_rotated_at": now,
+        "handshake_challenge": None,
+        "handshake_expires_at": None,
+        "handshake_verified_at": None,
         "created_at": now,
         "updated_at": now,
     }
     await db.bots.insert_one(bot_doc)
     bot_doc = sanitize_doc(bot_doc)
-    return {"bot": bot_doc}
+    return {"bot": bot_doc, "bot_secret": raw_secret}
 
 
 @api_router.get("/bots/{handle}")
