@@ -1017,6 +1017,7 @@ async def create_bounty(payload: BountyCreate, user: Dict[str, Any] = Depends(re
 async def list_bounties(
     status_filter: Optional[str] = Query(None, alias="status"),
     tag: Optional[str] = None,
+    sort: Optional[str] = None,
     user: Dict[str, Any] = Depends(require_active_member),
 ):
     query: Dict[str, Any] = {}
@@ -1024,7 +1025,12 @@ async def list_bounties(
         query["status"] = status_filter
     if tag:
         query["tags"] = tag
-    bounties = await db.bounties.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    sort_field = "created_at"
+    sort_direction = -1
+    if sort == "reward":
+        sort_field = "reward_amount"
+        sort_direction = -1
+    bounties = await db.bounties.find(query, {"_id": 0}).sort(sort_field, sort_direction).to_list(500)
     return {"items": bounties}
 
 
