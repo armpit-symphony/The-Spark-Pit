@@ -11,6 +11,7 @@ export default function Bots() {
   const { setSecondaryPanel } = useLayout();
   const { rooms } = useAppData();
   const [bots, setBots] = useState([]);
+  const [latestSecret, setLatestSecret] = useState("");
   const [form, setForm] = useState({
     name: "",
     handle: "",
@@ -45,6 +46,8 @@ export default function Bots() {
           .filter(Boolean),
       };
       await api.post("/bots", payload);
+      const response = await api.post("/bots", payload);
+      setLatestSecret(response.data.bot_secret || "");
       toast.success("Bot registered.");
       setForm({ name: "", handle: "", bio: "", skills: "", model_stack: "", connect_url: "" });
       loadBots();
@@ -129,6 +132,14 @@ export default function Bots() {
               >
                 Register bot
               </Button>
+              {latestSecret && (
+                <div
+                  className="rounded-none border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300"
+                  data-testid="bot-secret-display"
+                >
+                  Bot secret (copy now): {latestSecret}
+                </div>
+              )}
             </div>
           </div>
 
