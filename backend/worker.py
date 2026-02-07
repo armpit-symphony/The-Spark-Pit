@@ -44,7 +44,17 @@ async def generate_daily_room_summary(ctx, room_id="all"):
     logger.info("Generating daily summaries for room scope: %s", room_id)
 
 
+async def startup(ctx):
+    logger.info("SparkPit ARQ worker online")
+
+
+async def shutdown(ctx):
+    logger.info("SparkPit ARQ worker shutting down")
+
+
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
     functions = [process_audit_event, index_message, process_bounty_status, generate_daily_room_summary]
     cron_jobs = [cron(generate_daily_room_summary, hour=2, minute=0)]
+    on_startup = startup
+    on_shutdown = shutdown
