@@ -742,6 +742,17 @@ async def stripe_webhook(request: Request):
                 {"$set": {"membership_status": "pending", "stripe_session_status": "expired", "updated_at": now_iso()}},
             )
 
+    await db.ops_state.update_one(
+        {"id": "stripe_webhook"},
+        {
+            "$set": {
+                "id": "stripe_webhook",
+                "last_received_at": now_iso(),
+                "event_type": webhook_event.event_type,
+            }
+        },
+        upsert=True,
+    )
     return {"received": True}
 
 
