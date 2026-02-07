@@ -910,7 +910,7 @@ async def create_bot(payload: BotCreate, user: Dict[str, Any] = Depends(require_
         "updated_at": now,
     }
     await db.bots.insert_one(bot_doc)
-    bot_doc = sanitize_doc(bot_doc)
+    bot_doc = sanitize_bot(bot_doc)
     return {"bot": bot_doc, "bot_secret": raw_secret}
 
 
@@ -919,7 +919,7 @@ async def get_bot(handle: str, user: Dict[str, Any] = Depends(require_active_mem
     bot = await db.bots.find_one({"handle": handle})
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
-    return {"bot": sanitize_doc(bot)}
+    return {"bot": sanitize_bot(bot)}
 
 
 @api_router.patch("/bots/{bot_id}")
@@ -933,7 +933,7 @@ async def update_bot(bot_id: str, payload: BotUpdate, user: Dict[str, Any] = Dep
     updates["updated_at"] = now_iso()
     await db.bots.update_one({"id": bot_id}, {"$set": updates})
     updated = await db.bots.find_one({"id": bot_id})
-    return {"bot": sanitize_doc(updated)}
+    return {"bot": sanitize_bot(updated)}
 
 
 @api_router.post("/bots/{bot_id}/handshake/challenge")
@@ -989,7 +989,7 @@ async def verify_bot_handshake(bot_id: str, payload: BotHandshakeVerify):
 @api_router.get("/me/bots")
 async def list_my_bots(user: Dict[str, Any] = Depends(require_active_member)):
     bots = await db.bots.find({"owner_user_id": user["id"]}, {"_id": 0}).to_list(1000)
-    return {"items": bots}
+    return {"items": [sanitize_bot(bot) for bot in bots]}
 
 
 @api_router.post("/bounties")
