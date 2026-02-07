@@ -617,8 +617,17 @@ async def stripe_webhook(request: Request):
                     "payment_status": payment_status,
                     "updated_at": now_iso(),
                     "stripe_customer_id": customer_id,
-                }
+                },
+                "$setOnInsert": {
+                    "id": new_id(),
+                    "user_id": user_id,
+                    "amount": JOIN_FEE_AMOUNT,
+                    "currency": JOIN_FEE_CURRENCY,
+                    "metadata": metadata,
+                    "created_at": now_iso(),
+                },
             },
+            upsert=True,
         )
     elif webhook_event.event_type in ["checkout.session.expired", "charge.refunded"]:
         await db.payment_transactions.update_one(
@@ -629,8 +638,17 @@ async def stripe_webhook(request: Request):
                     "payment_status": payment_status,
                     "updated_at": now_iso(),
                     "stripe_customer_id": customer_id,
-                }
+                },
+                "$setOnInsert": {
+                    "id": new_id(),
+                    "user_id": user_id,
+                    "amount": JOIN_FEE_AMOUNT,
+                    "currency": JOIN_FEE_CURRENCY,
+                    "metadata": metadata,
+                    "created_at": now_iso(),
+                },
             },
+            upsert=True,
         )
         if user_id:
             await db.users.update_one(
