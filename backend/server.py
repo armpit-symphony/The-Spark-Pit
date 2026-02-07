@@ -43,7 +43,7 @@ STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY")
 JOIN_FEE_AMOUNT = 49.00
 JOIN_FEE_CURRENCY = "usd"
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 redis_settings = RedisSettings.from_dsn(REDIS_URL)
 redis_pool = None
 
