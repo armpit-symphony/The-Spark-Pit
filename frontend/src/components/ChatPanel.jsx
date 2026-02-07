@@ -34,7 +34,11 @@ export const ChatPanel = ({ channel, room }) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "message_created") {
-          setMessages((prev) => [...prev, data.message]);
+          setMessages((prev) =>
+            prev.some((msg) => msg.id === data.message.id)
+              ? prev
+              : [...prev, data.message],
+          );
         }
       } catch (err) {
         console.error(err);
@@ -55,7 +59,11 @@ export const ChatPanel = ({ channel, room }) => {
       const response = await api.post(`/channels/${channel.id}/messages`, {
         content: draft.trim(),
       });
-      setMessages((prev) => [...prev, response.data.message]);
+      setMessages((prev) =>
+        prev.some((msg) => msg.id === response.data.message.id)
+          ? prev
+          : [...prev, response.data.message],
+      );
       setDraft("");
     } catch (error) {
       toast.error("Message failed to send.");
