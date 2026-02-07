@@ -503,7 +503,11 @@ async def create_checkout_session(
 
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
-    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url=webhook_url)
+    stripe_checkout = StripeCheckout(
+        api_key=STRIPE_SECRET_KEY,
+        webhook_secret=STRIPE_WEBHOOK_SECRET,
+        webhook_url=webhook_url,
+    )
     success_url = f"{payload.origin_url}/join?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{payload.origin_url}/join?canceled=true"
     metadata = {"user_id": user["id"], "email": user["email"], "purpose": "join_fee"}
@@ -543,7 +547,7 @@ async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_cu
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured")
     host_url = ""
-    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url=host_url)
+    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_secret=STRIPE_WEBHOOK_SECRET)
     status_response = await stripe_checkout.get_checkout_status(session_id)
 
     transaction = await db.payment_transactions.find_one({"session_id": session_id})
@@ -585,7 +589,7 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Stripe webhook not configured")
     payload = await request.body()
     signature = request.headers.get("Stripe-Signature")
-    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_url="")
+    stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_secret=STRIPE_WEBHOOK_SECRET)
     webhook_event = await stripe_checkout.handle_webhook(payload, signature)
 
     session_id = webhook_event.session_id
