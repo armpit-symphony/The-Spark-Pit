@@ -1,88 +1,732 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-import os
-import logging
-from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional, Dict, Any
+from pathlib import Path
+from passlib.context import CryptContext
+from jose import jwt, JWTError
+from datetime import datetime, timezone, timedelta
+import os
 import uuid
-from datetime import datetime, timezone
-
+import logging
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ["DB_NAME"]]
 
-# Create the main app without a prefix
+JWT_SECRET = os.environ.get("JWT_SECRET", "sparkpit_dev_secret")
+JWT_ALGORITHM = "HS256"
+TOKEN_EXPIRE_DAYS = 7
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-# Add your routes to the router instead of directly to app
+
+def new_id() -> str:
+    return str(uuid.uuid4())
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+
+def create_token(user: Dict[str, Any]) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=TOKEN_EXPIRE_DAYS)
+    payload = {"sub": user["id"], "exp": expire}
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def sanitize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    if not doc:
+        return doc
+    doc.pop("_id", None)
+    return doc
+
+
+async def log_audit(
+    event_type: str,
+    actor_type: str,
+    actor_id: str,
+    room_id: Optional[str] = None,
+    channel_id: Optional[str] = None,
+    bounty_id: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+):
+    audit_doc = {
+        "id": new_id(),
+        "event_type": event_type,
+        "actor_type": actor_type,
+        "actor_id": actor_id,
+        "room_id": room_id,
+        "channel_id": channel_id,
+        "bounty_id": bounty_id,
+        "payload": payload or {},
+        "created_at": now_iso(),
+    }
+    await db.audit_events.insert_one(audit_doc)
+
+
+class AuthResponse(BaseModel):
+    token: str
+    user: Dict[str, Any]
+
+
+class UserCreate(BaseModel):
+    email: str
+    handle: str
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserUpdate(BaseModel):
+    handle: Optional[str] = None
+
+
+class InviteClaim(BaseModel):
+    code: str
+
+
+class InviteCodeCreate(BaseModel):
+    code: Optional[str] = None
+    max_uses: int = 1
+    expires_at: Optional[str] = None
+
+
+class RoomCreate(BaseModel):
+    slug: str
+    title: str
+    is_public: bool = True
+
+
+class ChannelCreate(BaseModel):
+    slug: str
+    title: str
+    type: str = "chat"
+
+
+class MessageCreate(BaseModel):
+    content: str
+
+
+class BotCreate(BaseModel):
+    name: str
+    handle: str
+    bio: Optional[str] = ""
+    skills: List[str] = []
+    model_stack: Optional[List[str]] = []
+    connect_url: Optional[str] = ""
+    status: str = "offline"
+
+
+class BotUpdate(BaseModel):
+    name: Optional[str] = None
+    bio: Optional[str] = None
+    skills: Optional[List[str]] = None
+    model_stack: Optional[List[str]] = None
+    connect_url: Optional[str] = None
+    status: Optional[str] = None
+
+
+class BountyCreate(BaseModel):
+    title: str
+    description: str
+    tags: List[str] = []
+    reward_amount: Optional[float] = None
+    reward_currency: Optional[str] = None
+    room_id: Optional[str] = None
+    due_at: Optional[str] = None
+
+
+class BountyUpdateCreate(BaseModel):
+    type: str = "comment"
+    content: str
+
+
+class BountyStatusUpdate(BaseModel):
+    status: str
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return sanitize_doc(user)
+
+
+async def require_active_member(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if user.get("membership_status") != "active":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Membership not active")
+    return user
+
+
+async def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, List[WebSocket]] = {}
+
+    async def connect(self, channel_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.setdefault(channel_id, []).append(websocket)
+
+    def disconnect(self, channel_id: str, websocket: WebSocket):
+        if channel_id in self.active_connections:
+            self.active_connections[channel_id] = [
+                conn for conn in self.active_connections[channel_id] if conn != websocket
+            ]
+
+    async def broadcast(self, channel_id: str, message: Dict[str, Any]):
+        for connection in self.active_connections.get(channel_id, []):
+            await connection.send_json(message)
+
+
+manager = ConnectionManager()
+
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Spark Pit API online"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.post("/auth/register", response_model=AuthResponse)
+async def register(user: UserCreate):
+    existing = await db.users.find_one({"$or": [{"email": user.email}, {"handle": user.handle}]})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email or handle already exists")
 
-# Include the router in the main app
+    user_count = await db.users.count_documents({})
+    role = "admin" if user_count == 0 else "member"
+    membership_status = "active" if role == "admin" else "pending"
+    now = now_iso()
+    user_doc = {
+        "id": new_id(),
+        "email": user.email,
+        "handle": user.handle,
+        "password_hash": hash_password(user.password),
+        "role": role,
+        "membership_status": membership_status,
+        "joined_at": now if membership_status == "active" else None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.users.insert_one(user_doc)
+    token = create_token(user_doc)
+    user_doc.pop("password_hash", None)
+    return {"token": token, "user": user_doc}
+
+
+@api_router.post("/auth/login", response_model=AuthResponse)
+async def login(user: UserLogin):
+    existing = await db.users.find_one({"email": user.email})
+    if not existing or not verify_password(user.password, existing.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+    existing = sanitize_doc(existing)
+    token = create_token(existing)
+    existing.pop("password_hash", None)
+    return {"token": token, "user": existing}
+
+
+@api_router.post("/auth/invite/claim")
+async def claim_invite(payload: InviteClaim, user: Dict[str, Any] = Depends(get_current_user)):
+    code_doc = await db.invite_codes.find_one({"code": payload.code})
+    if not code_doc:
+        raise HTTPException(status_code=404, detail="Invite code not found")
+    code_doc = sanitize_doc(code_doc)
+    if code_doc.get("expires_at") and code_doc["expires_at"] < now_iso():
+        raise HTTPException(status_code=400, detail="Invite code expired")
+    if code_doc.get("uses", 0) >= code_doc.get("max_uses", 1):
+        raise HTTPException(status_code=400, detail="Invite code exhausted")
+
+    await db.invite_codes.update_one(
+        {"id": code_doc["id"]},
+        {"$inc": {"uses": 1}},
+    )
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"membership_status": "active", "joined_at": now_iso(), "updated_at": now_iso()}},
+    )
+    await log_audit("invite.claimed", "user", user["id"], payload={"code": payload.code})
+    return {"status": "active"}
+
+
+@api_router.get("/me")
+async def get_me(user: Dict[str, Any] = Depends(get_current_user)):
+    return {"user": user}
+
+
+@api_router.patch("/me")
+async def update_me(payload: UserUpdate, user: Dict[str, Any] = Depends(get_current_user)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        return {"user": user}
+    updates["updated_at"] = now_iso()
+    await db.users.update_one({"id": user["id"]}, {"$set": updates})
+    updated = await db.users.find_one({"id": user["id"]})
+    updated = sanitize_doc(updated)
+    updated.pop("password_hash", None)
+    return {"user": updated}
+
+
+@api_router.post("/admin/invite-codes")
+async def create_invite_code(payload: InviteCodeCreate, admin: Dict[str, Any] = Depends(require_admin)):
+    code_value = payload.code or f"SPARK-{uuid.uuid4().hex[:8].upper()}"
+    now = now_iso()
+    code_doc = {
+        "id": new_id(),
+        "code": code_value,
+        "max_uses": payload.max_uses,
+        "uses": 0,
+        "created_by_user_id": admin["id"],
+        "expires_at": payload.expires_at,
+        "created_at": now,
+    }
+    await db.invite_codes.insert_one(code_doc)
+    await log_audit("invite.created", "user", admin["id"], payload={"code": code_value})
+    return {"invite_code": code_doc}
+
+
+@api_router.get("/admin/audit")
+async def audit_feed(room_id: Optional[str] = None, admin: Dict[str, Any] = Depends(require_admin)):
+    query: Dict[str, Any] = {}
+    if room_id:
+        query["room_id"] = room_id
+    events = await db.audit_events.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"items": events}
+
+
+@api_router.post("/rooms")
+async def create_room(payload: RoomCreate, user: Dict[str, Any] = Depends(require_active_member)):
+    existing = await db.rooms.find_one({"slug": payload.slug})
+    if existing:
+        raise HTTPException(status_code=400, detail="Room slug already exists")
+    now = now_iso()
+    room_doc = {
+        "id": new_id(),
+        "slug": payload.slug,
+        "title": payload.title,
+        "is_public": payload.is_public,
+        "created_by_user_id": user["id"],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.rooms.insert_one(room_doc)
+    membership_doc = {
+        "id": new_id(),
+        "room_id": room_doc["id"],
+        "member_type": "user",
+        "member_id": user["id"],
+        "role": "owner",
+        "created_at": now,
+    }
+    await db.room_memberships.insert_one(membership_doc)
+    default_channel = {
+        "id": new_id(),
+        "room_id": room_doc["id"],
+        "slug": "general",
+        "title": "General",
+        "type": "chat",
+        "created_at": now,
+    }
+    await db.channels.insert_one(default_channel)
+    await log_audit("room.created", "user", user["id"], room_id=room_doc["id"], payload={"slug": payload.slug})
+    await log_audit("room.joined", "user", user["id"], room_id=room_doc["id"], payload={"role": "owner"})
+    return {"room": room_doc, "default_channel": default_channel}
+
+
+@api_router.get("/rooms")
+async def list_rooms(user: Dict[str, Any] = Depends(require_active_member)):
+    memberships = await db.room_memberships.find(
+        {"member_type": "user", "member_id": user["id"]}, {"_id": 0}
+    ).to_list(1000)
+    joined_room_ids = {m["room_id"] for m in memberships}
+    rooms = await db.rooms.find(
+        {"$or": [{"is_public": True}, {"id": {"$in": list(joined_room_ids)}}]}, {"_id": 0}
+    ).to_list(1000)
+    for room in rooms:
+        room["joined"] = room["id"] in joined_room_ids
+    return {"items": rooms}
+
+
+@api_router.get("/rooms/{slug}")
+async def get_room(slug: str, user: Dict[str, Any] = Depends(require_active_member)):
+    room = await db.rooms.find_one({"slug": slug})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room = sanitize_doc(room)
+    membership = await db.room_memberships.find_one(
+        {"room_id": room["id"], "member_type": "user", "member_id": user["id"]}
+    )
+    membership = sanitize_doc(membership) if membership else None
+    channels = await db.channels.find({"room_id": room["id"]}, {"_id": 0}).to_list(200)
+    return {"room": room, "channels": channels, "membership": membership}
+
+
+@api_router.post("/rooms/{slug}/join")
+async def join_room(slug: str, user: Dict[str, Any] = Depends(require_active_member)):
+    room = await db.rooms.find_one({"slug": slug})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room = sanitize_doc(room)
+    if not room.get("is_public"):
+        raise HTTPException(status_code=403, detail="Room is private")
+    existing = await db.room_memberships.find_one(
+        {"room_id": room["id"], "member_type": "user", "member_id": user["id"]}
+    )
+    if not existing:
+        membership_doc = {
+            "id": new_id(),
+            "room_id": room["id"],
+            "member_type": "user",
+            "member_id": user["id"],
+            "role": "member",
+            "created_at": now_iso(),
+        }
+        await db.room_memberships.insert_one(membership_doc)
+        await log_audit("room.joined", "user", user["id"], room_id=room["id"], payload={"role": "member"})
+    return {"joined": True}
+
+
+@api_router.post("/rooms/{slug}/join-bot")
+async def join_bot_room(slug: str, bot_id: str = Query(...), user: Dict[str, Any] = Depends(require_active_member)):
+    room = await db.rooms.find_one({"slug": slug})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room = sanitize_doc(room)
+    bot = await db.bots.find_one({"id": bot_id, "owner_user_id": user["id"]})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    existing = await db.room_memberships.find_one(
+        {"room_id": room["id"], "member_type": "bot", "member_id": bot_id}
+    )
+    if not existing:
+        membership_doc = {
+            "id": new_id(),
+            "room_id": room["id"],
+            "member_type": "bot",
+            "member_id": bot_id,
+            "role": "member",
+            "created_at": now_iso(),
+        }
+        await db.room_memberships.insert_one(membership_doc)
+        await log_audit("room.bot_joined", "user", user["id"], room_id=room["id"], payload={"bot_id": bot_id})
+    return {"joined": True}
+
+
+@api_router.post("/rooms/{slug}/channels")
+async def create_channel(slug: str, payload: ChannelCreate, user: Dict[str, Any] = Depends(require_active_member)):
+    room = await db.rooms.find_one({"slug": slug})
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    room = sanitize_doc(room)
+    membership = await db.room_memberships.find_one(
+        {"room_id": room["id"], "member_type": "user", "member_id": user["id"]}
+    )
+    membership = sanitize_doc(membership) if membership else None
+    if user.get("role") != "admin" and (not membership or membership.get("role") not in ["owner", "moderator"]):
+        raise HTTPException(status_code=403, detail="Not allowed to create channels")
+    existing = await db.channels.find_one({"room_id": room["id"], "slug": payload.slug})
+    if existing:
+        raise HTTPException(status_code=400, detail="Channel slug already exists")
+    channel_doc = {
+        "id": new_id(),
+        "room_id": room["id"],
+        "slug": payload.slug,
+        "title": payload.title,
+        "type": payload.type,
+        "created_at": now_iso(),
+    }
+    await db.channels.insert_one(channel_doc)
+    await log_audit("channel.created", "user", user["id"], room_id=room["id"], channel_id=channel_doc["id"], payload={"slug": payload.slug})
+    return {"channel": channel_doc}
+
+
+@api_router.get("/channels/{channel_id}/messages")
+async def get_messages(
+    channel_id: str,
+    cursor: Optional[str] = None,
+    limit: int = 50,
+    user: Dict[str, Any] = Depends(require_active_member),
+):
+    channel = await db.channels.find_one({"id": channel_id})
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    channel = sanitize_doc(channel)
+    membership = await db.room_memberships.find_one(
+        {"room_id": channel["room_id"], "member_type": "user", "member_id": user["id"]}
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Join the room first")
+    query: Dict[str, Any] = {"channel_id": channel_id}
+    if cursor:
+        query["created_at"] = {"$lt": cursor}
+    messages = await db.messages.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    messages.reverse()
+    next_cursor = messages[0]["created_at"] if messages else None
+    return {"items": messages, "next_cursor": next_cursor}
+
+
+@api_router.post("/channels/{channel_id}/messages")
+async def post_message(
+    channel_id: str,
+    payload: MessageCreate,
+    user: Dict[str, Any] = Depends(require_active_member),
+):
+    channel = await db.channels.find_one({"id": channel_id})
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    channel = sanitize_doc(channel)
+    membership = await db.room_memberships.find_one(
+        {"room_id": channel["room_id"], "member_type": "user", "member_id": user["id"]}
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Join the room first")
+    message_doc = {
+        "id": new_id(),
+        "channel_id": channel_id,
+        "sender_type": "user",
+        "sender_id": user["id"],
+        "sender_handle": user.get("handle"),
+        "content": payload.content,
+        "metadata": {},
+        "created_at": now_iso(),
+    }
+    await db.messages.insert_one(message_doc)
+    await log_audit("message.posted", "user", user["id"], room_id=channel["room_id"], channel_id=channel_id)
+    await manager.broadcast(channel_id, {"type": "message_created", "message": message_doc})
+    return {"message": message_doc}
+
+
+@api_router.post("/bots")
+async def create_bot(payload: BotCreate, user: Dict[str, Any] = Depends(require_active_member)):
+    existing = await db.bots.find_one({"handle": payload.handle})
+    if existing:
+        raise HTTPException(status_code=400, detail="Bot handle already exists")
+    now = now_iso()
+    bot_doc = {
+        "id": new_id(),
+        "owner_user_id": user["id"],
+        "name": payload.name,
+        "handle": payload.handle,
+        "bio": payload.bio or "",
+        "skills": payload.skills or [],
+        "model_stack": payload.model_stack or [],
+        "connect_url": payload.connect_url or "",
+        "status": payload.status or "offline",
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.bots.insert_one(bot_doc)
+    return {"bot": bot_doc}
+
+
+@api_router.get("/bots/{handle}")
+async def get_bot(handle: str, user: Dict[str, Any] = Depends(require_active_member)):
+    bot = await db.bots.find_one({"handle": handle})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return {"bot": sanitize_doc(bot)}
+
+
+@api_router.patch("/bots/{bot_id}")
+async def update_bot(bot_id: str, payload: BotUpdate, user: Dict[str, Any] = Depends(require_active_member)):
+    bot = await db.bots.find_one({"id": bot_id, "owner_user_id": user["id"]})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        return {"bot": sanitize_doc(bot)}
+    updates["updated_at"] = now_iso()
+    await db.bots.update_one({"id": bot_id}, {"$set": updates})
+    updated = await db.bots.find_one({"id": bot_id})
+    return {"bot": sanitize_doc(updated)}
+
+
+@api_router.get("/me/bots")
+async def list_my_bots(user: Dict[str, Any] = Depends(require_active_member)):
+    bots = await db.bots.find({"owner_user_id": user["id"]}, {"_id": 0}).to_list(1000)
+    return {"items": bots}
+
+
+@api_router.post("/bounties")
+async def create_bounty(payload: BountyCreate, user: Dict[str, Any] = Depends(require_active_member)):
+    if payload.room_id:
+        membership = await db.room_memberships.find_one(
+            {"room_id": payload.room_id, "member_type": "user", "member_id": user["id"]}
+        )
+        if not membership:
+            raise HTTPException(status_code=403, detail="Join the room before posting a bounty")
+    now = now_iso()
+    bounty_doc = {
+        "id": new_id(),
+        "created_by_user_id": user["id"],
+        "room_id": payload.room_id,
+        "title": payload.title,
+        "description": payload.description,
+        "tags": payload.tags or [],
+        "reward_amount": payload.reward_amount,
+        "reward_currency": payload.reward_currency,
+        "status": "open",
+        "claimed_by_type": None,
+        "claimed_by_id": None,
+        "due_at": payload.due_at,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.bounties.insert_one(bounty_doc)
+    await log_audit("bounty.created", "user", user["id"], room_id=payload.room_id, bounty_id=bounty_doc["id"])
+    return {"bounty": bounty_doc}
+
+
+@api_router.get("/bounties")
+async def list_bounties(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    tag: Optional[str] = None,
+    user: Dict[str, Any] = Depends(require_active_member),
+):
+    query: Dict[str, Any] = {}
+    if status_filter:
+        query["status"] = status_filter
+    if tag:
+        query["tags"] = tag
+    bounties = await db.bounties.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": bounties}
+
+
+@api_router.get("/bounties/{bounty_id}")
+async def get_bounty(bounty_id: str, user: Dict[str, Any] = Depends(require_active_member)):
+    bounty = await db.bounties.find_one({"id": bounty_id})
+    if not bounty:
+        raise HTTPException(status_code=404, detail="Bounty not found")
+    bounty = sanitize_doc(bounty)
+    updates = await db.bounty_updates.find({"bounty_id": bounty_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
+    return {"bounty": bounty, "updates": updates}
+
+
+@api_router.post("/bounties/{bounty_id}/claim")
+async def claim_bounty(bounty_id: str, user: Dict[str, Any] = Depends(require_active_member)):
+    bounty = await db.bounties.find_one({"id": bounty_id})
+    if not bounty:
+        raise HTTPException(status_code=404, detail="Bounty not found")
+    bounty = sanitize_doc(bounty)
+    if bounty.get("status") != "open":
+        raise HTTPException(status_code=400, detail="Bounty not open")
+    await db.bounties.update_one(
+        {"id": bounty_id},
+        {
+            "$set": {
+                "status": "claimed",
+                "claimed_by_type": "user",
+                "claimed_by_id": user["id"],
+                "updated_at": now_iso(),
+            }
+        },
+    )
+    await log_audit("bounty.claimed", "user", user["id"], bounty_id=bounty_id, room_id=bounty.get("room_id"))
+    return {"status": "claimed"}
+
+
+@api_router.post("/bounties/{bounty_id}/updates")
+async def create_bounty_update(
+    bounty_id: str, payload: BountyUpdateCreate, user: Dict[str, Any] = Depends(require_active_member)
+):
+    bounty = await db.bounties.find_one({"id": bounty_id})
+    if not bounty:
+        raise HTTPException(status_code=404, detail="Bounty not found")
+    update_doc = {
+        "id": new_id(),
+        "bounty_id": bounty_id,
+        "author_type": "user",
+        "author_id": user["id"],
+        "type": payload.type,
+        "content": payload.content,
+        "created_at": now_iso(),
+    }
+    await db.bounty_updates.insert_one(update_doc)
+    await log_audit("bounty.updated", "user", user["id"], bounty_id=bounty_id)
+    return {"update": update_doc}
+
+
+@api_router.post("/bounties/{bounty_id}/status")
+async def update_bounty_status(
+    bounty_id: str, payload: BountyStatusUpdate, user: Dict[str, Any] = Depends(require_active_member)
+):
+    bounty = await db.bounties.find_one({"id": bounty_id})
+    if not bounty:
+        raise HTTPException(status_code=404, detail="Bounty not found")
+    bounty = sanitize_doc(bounty)
+    if bounty.get("created_by_user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed to update status")
+    await db.bounties.update_one(
+        {"id": bounty_id},
+        {"$set": {"status": payload.status, "updated_at": now_iso()}},
+    )
+    await log_audit(
+        "bounty.status_changed",
+        "user",
+        user["id"],
+        bounty_id=bounty_id,
+        room_id=bounty.get("room_id"),
+        payload={"status": payload.status},
+    )
+    return {"status": payload.status}
+
+
+@app.websocket("/api/ws")
+async def websocket_endpoint(websocket: WebSocket, channelId: str):
+    await manager.connect(channelId, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "typing":
+                await manager.broadcast(channelId, {"type": "typing", "user": data.get("user")})
+    except WebSocketDisconnect:
+        manager.disconnect(channelId, websocket)
+
+
 app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
