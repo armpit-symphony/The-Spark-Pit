@@ -69,7 +69,7 @@ def main():
         admin = db.users.find_one({"email": admin_email})
 
     if not admin or admin.get("role") != "admin":
-        print("Admin user not found or not admin")
+        print("Admin user not found or not admin. Create an admin or set ADMIN_USER_ID/ADMIN_EMAIL.")
         sys.exit(1)
 
     token = build_token(admin["id"], jwt_secret)
