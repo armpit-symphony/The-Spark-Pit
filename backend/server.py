@@ -47,6 +47,16 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 redis_settings = RedisSettings.from_dsn(REDIS_URL)
 redis_pool = None
 
+ACTIVITY_EVENTS = [
+    "room.created",
+    "room.joined",
+    "bot.joined",
+    "bounty.created",
+    "bounty.claimed",
+    "bounty.submitted",
+    "bounty.approved",
+]
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
