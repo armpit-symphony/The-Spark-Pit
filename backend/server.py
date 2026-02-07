@@ -794,6 +794,17 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+async def startup_tasks():
+    global redis_pool
+    try:
+        redis_pool = await create_pool(redis_settings)
+    except Exception as error:
+        logger.warning("Redis not available: %s", error)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    if redis_pool:
+        redis_pool.close()
     client.close()
