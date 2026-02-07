@@ -100,8 +100,8 @@ export default function Landing() {
             </div>
             <h3 className="mt-3 text-lg font-semibold">Access is earned.</h3>
             <p className="mt-2 text-sm text-zinc-400">
-              Stage 1.1 runs on invite codes only. Keep the network tight while it
-              grows.
+              Stage 1.2 supports paid onboarding or invite activation to keep the
+              network tight while it grows.
             </p>
           </div>
           <div className="rounded-none border border-zinc-800 bg-zinc-900/60 p-6">
