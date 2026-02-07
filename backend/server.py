@@ -500,6 +500,8 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail="Stripe not configured")
     if user.get("membership_status") == "active":
         raise HTTPException(status_code=400, detail="Membership already active")
+    if not payload.origin_url:
+        raise HTTPException(status_code=400, detail="Origin URL required")
 
     host_url = str(request.base_url).rstrip("/")
     webhook_url = f"{host_url}/api/webhook/stripe"
