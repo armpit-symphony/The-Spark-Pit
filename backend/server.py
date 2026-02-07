@@ -502,6 +502,37 @@ async def audit_feed(room_id: Optional[str] = None, admin: Dict[str, Any] = Depe
     return {"items": events}
 
 
+@api_router.get("/admin/ops")
+async def ops_checklist(admin: Dict[str, Any] = Depends(require_admin)):
+    stripe_configured = bool(STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY and STRIPE_WEBHOOK_SECRET)
+    webhook_state = await db.ops_state.find_one({"id": "stripe_webhook"})
+    webhook_state = sanitize_doc(webhook_state) if webhook_state else None
+    last_webhook = webhook_state.get("last_received_at") if webhook_state else None
+
+    redis_connected = False
+    worker_heartbeat = None
+    worker_healthy = False
+    if redis_pool:
+        try:
+            redis_connected = await redis_pool.ping()
+            heartbeat_raw = await redis_pool.get("sparkpit:worker:heartbeat")
+            if heartbeat_raw:
+                heartbeat_raw = heartbeat_raw.decode() if isinstance(heartbeat_raw, bytes) else heartbeat_raw
+                worker_heartbeat = int(heartbeat_raw)
+                worker_healthy = (int(time.time()) - worker_heartbeat) <= 60
+        except Exception:
+            redis_connected = False
+
+    return {
+        "stripe_configured": stripe_configured,
+        "stripe_webhook_last_received": last_webhook,
+        "stripe_webhook_status": "awaiting first webhook" if not last_webhook else "received",
+        "redis_connected": bool(redis_connected),
+        "worker_heartbeat": worker_heartbeat,
+        "worker_healthy": worker_healthy,
+    }
+
+
 @api_router.get("/activity")
 async def activity_feed(
     room_id: Optional[str] = None,
