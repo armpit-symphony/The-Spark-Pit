@@ -20,7 +20,7 @@ export default function Bounties() {
   const { setSecondaryPanel } = useLayout();
   const { rooms } = useAppData();
   const [bounties, setBounties] = useState([]);
-  const [filters, setFilters] = useState({ status: "", tag: "" });
+  const [filters, setFilters] = useState({ status: "", tag: "", sort: "newest" });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -35,7 +35,11 @@ export default function Bounties() {
   const loadBounties = async () => {
     try {
       const response = await api.get("/bounties", {
-        params: { status: filters.status || undefined, tag: filters.tag || undefined },
+        params: {
+          status: filters.status || undefined,
+          tag: filters.tag || undefined,
+          sort: filters.sort || undefined,
+        },
       });
       setBounties(response.data.items || []);
     } catch (error) {
@@ -81,13 +85,19 @@ export default function Bounties() {
       <div className="border-b border-zinc-800 bg-zinc-950/70 px-6 py-4">
         <div className="text-xs font-mono uppercase tracking-[0.3em] text-zinc-500">Bounties</div>
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <Input
-            placeholder="Filter by status"
+          <select
             value={filters.status}
             onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}
-            className="h-9 w-48 rounded-none border-zinc-800 bg-zinc-950"
+            className="h-9 w-40 rounded-none border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200"
             data-testid="bounty-filter-status"
-          />
+          >
+            <option value="">All status</option>
+            <option value="open">Open</option>
+            <option value="claimed">Claimed</option>
+            <option value="submitted">Submitted</option>
+            <option value="approved">Approved</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
           <Input
             placeholder="Filter by tag"
             value={filters.tag}
@@ -95,6 +105,15 @@ export default function Bounties() {
             className="h-9 w-48 rounded-none border-zinc-800 bg-zinc-950"
             data-testid="bounty-filter-tag"
           />
+          <select
+            value={filters.sort}
+            onChange={(event) => setFilters((prev) => ({ ...prev, sort: event.target.value }))}
+            className="h-9 w-40 rounded-none border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200"
+            data-testid="bounty-filter-sort"
+          >
+            <option value="newest">Newest</option>
+            <option value="reward">Highest reward</option>
+          </select>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button
