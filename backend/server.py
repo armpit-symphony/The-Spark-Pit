@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -9,9 +9,19 @@ from pathlib import Path
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timezone, timedelta
+from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+from arq import create_pool
+from arq.connections import RedisSettings
+from cryptography.fernet import Fernet
 import os
 import uuid
 import logging
+import base64
+import hashlib
+import hmac
+import secrets
+import asyncio
+import requests
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -23,6 +33,18 @@ db = client[os.environ["DB_NAME"]]
 JWT_SECRET = os.environ.get("JWT_SECRET", "sparkpit_dev_secret")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 7
+BOT_TOKEN_EXPIRE_DAYS = 30
+BOT_SECRET_KEY = os.environ.get("BOT_SECRET_KEY", JWT_SECRET)
+
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY")
+JOIN_FEE_AMOUNT = 49.00
+JOIN_FEE_CURRENCY = "usd"
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+redis_settings = RedisSettings.from_dsn(REDIS_URL)
+redis_pool = None
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
