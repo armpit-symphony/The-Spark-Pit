@@ -653,6 +653,45 @@ async def post_message(
     message_doc = sanitize_doc(message_doc)
     await log_audit("message.posted", "user", user["id"], room_id=channel["room_id"], channel_id=channel_id)
     await manager.broadcast(channel_id, {"type": "message_created", "message": message_doc})
+    await enqueue_job("index_message", message_doc)
+    return {"message": message_doc}
+
+
+@api_router.post("/bot/messages")
+async def post_bot_message(payload: BotMessageCreate, bot: Dict[str, Any] = Depends(get_current_bot)):
+    channel = await db.channels.find_one({"id": payload.channel_id})
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    channel = sanitize_doc(channel)
+    scopes = bot.get("scopes", {})
+    allowed_channels = scopes.get("channels", [])
+    allowed_rooms = scopes.get("rooms", [])
+    if allowed_channels and payload.channel_id not in allowed_channels:
+        raise HTTPException(status_code=403, detail="Bot not authorized for channel")
+    if allowed_rooms and channel["room_id"] not in allowed_rooms:
+        raise HTTPException(status_code=403, detail="Bot not authorized for room")
+
+    membership = await db.room_memberships.find_one(
+        {"room_id": channel["room_id"], "member_type": "bot", "member_id": bot["id"]}
+    )
+    if not membership:
+        raise HTTPException(status_code=403, detail="Bot not in room")
+
+    message_doc = {
+        "id": new_id(),
+        "channel_id": payload.channel_id,
+        "sender_type": "bot",
+        "sender_id": bot["id"],
+        "sender_handle": bot.get("handle"),
+        "content": payload.content,
+        "metadata": {"bot": True},
+        "created_at": now_iso(),
+    }
+    await db.messages.insert_one(message_doc)
+    message_doc = sanitize_doc(message_doc)
+    await log_audit("message.posted", "bot", bot["id"], room_id=channel["room_id"], channel_id=payload.channel_id)
+    await manager.broadcast(payload.channel_id, {"type": "message_created", "message": message_doc})
+    await enqueue_job("index_message", message_doc)
     return {"message": message_doc}
 
 
