@@ -11,6 +11,7 @@ import Bounties from "@/pages/Bounties";
 import BountyDetail from "@/pages/BountyDetail";
 import Bots from "@/pages/Bots";
 import Settings from "@/pages/Settings";
+import Activity from "@/pages/Activity";
 import { Toaster } from "@/components/ui/sonner";
 
 const LoadingScreen = () => (
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="bounties" element={<Bounties />} />
         <Route path="bounties/:id" element={<BountyDetail />} />
         <Route path="bots" element={<Bots />} />
+        <Route path="activity" element={<Activity />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
