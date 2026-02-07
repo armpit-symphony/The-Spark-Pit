@@ -546,7 +546,6 @@ async def create_checkout_session(
 async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_current_user)):
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Stripe not configured")
-    host_url = ""
     stripe_checkout = StripeCheckout(api_key=STRIPE_SECRET_KEY, webhook_secret=STRIPE_WEBHOOK_SECRET)
     status_response = await stripe_checkout.get_checkout_status(session_id)
 
