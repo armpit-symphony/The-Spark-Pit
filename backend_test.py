@@ -583,6 +583,20 @@ class SparkPitAPITester:
             self.test_list_my_bots()
             self.test_get_bot()
             self.test_add_bot_to_room()
+            
+            # Bot handshake system
+            if self.test_bot_handshake_challenge():
+                self.test_bot_handshake_verify_invalid()
+        
+        # Stripe payment system (expected to fail without credentials)
+        self.test_stripe_checkout_creation()
+        self.test_stripe_checkout_status()
+        
+        # Bounty filtering
+        self.test_bounty_filters()
+        
+        # Reputation system
+        self.test_reputation_signals()
         
         # Admin features
         self.test_audit_feed()
