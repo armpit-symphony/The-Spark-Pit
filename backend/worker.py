@@ -59,7 +59,16 @@ async def shutdown(ctx):
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(REDIS_URL)
-    functions = [process_audit_event, index_message, process_bounty_status, generate_daily_room_summary]
-    cron_jobs = [cron(generate_daily_room_summary, hour=2, minute=0)]
+    functions = [
+        process_audit_event,
+        index_message,
+        process_bounty_status,
+        generate_daily_room_summary,
+        worker_heartbeat,
+    ]
+    cron_jobs = [
+        cron(generate_daily_room_summary, hour=2, minute=0),
+        cron(worker_heartbeat, second={0, 15, 30, 45}),
+    ]
     on_startup = startup
     on_shutdown = shutdown
