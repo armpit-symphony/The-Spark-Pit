@@ -180,7 +180,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return sanitize_doc(user)
+    user = sanitize_doc(user)
+    user.pop("password_hash", None)
+    return user
 
 
 async def require_active_member(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
