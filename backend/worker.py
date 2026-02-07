@@ -18,7 +18,7 @@ db_name = os.environ.get("DB_NAME")
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
 
 async def process_audit_event(ctx, audit_event):
