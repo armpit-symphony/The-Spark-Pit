@@ -538,6 +538,8 @@ async def checkout_status(session_id: str, user: Dict[str, Any] = Depends(get_cu
 
     transaction = await db.payment_transactions.find_one({"session_id": session_id})
     transaction = sanitize_doc(transaction) if transaction else None
+    if transaction and transaction.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Session does not belong to user")
     new_status = status_response.status
     payment_status = status_response.payment_status
     updates = {
