@@ -92,6 +92,14 @@ body,
     }
 }
 
+h1,
+h2,
+h3,
+h4 {
+    font-family: "Rajdhani", sans-serif;
+    letter-spacing: -0.02em;
+}
+
 @layer base {
     [data-debug-wrapper="true"] {
         display: contents !important;
