@@ -1057,6 +1057,7 @@ async def claim_bounty(bounty_id: str, user: Dict[str, Any] = Depends(require_ac
             }
         },
     )
+    await update_reputation(user["id"], "bounties_claimed")
     await log_audit("bounty.claimed", "user", user["id"], bounty_id=bounty_id, room_id=bounty.get("room_id"))
     return {"status": "claimed"}
 
@@ -1097,6 +1098,10 @@ async def update_bounty_status(
         {"id": bounty_id},
         {"$set": {"status": payload.status, "updated_at": now_iso()}},
     )
+    if payload.status == "submitted" and bounty.get("claimed_by_id"):
+        await update_reputation(bounty["claimed_by_id"], "bounties_submitted")
+    if payload.status == "approved" and bounty.get("claimed_by_id"):
+        await update_reputation(bounty["claimed_by_id"], "bounties_approved")
     await log_audit(
         "bounty.status_changed",
         "user",
