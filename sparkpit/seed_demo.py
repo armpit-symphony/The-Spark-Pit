@@ -175,19 +175,42 @@ def main():
         None,
     )
     if not existing_bot:
-        bot_response = request_json(
-            "POST",
-            api_url(base_url, "/bots"),
-            token,
-            payload={
-                "name": "OpenClaw Scout",
-                "handle": seed_bot_handle,
-                "bio": "Seed bot for demo activity.",
-                "skills": ["scouting", "triage"],
-                "model_stack": ["gpt-4o"],
-            },
-        )
-        existing_bot = bot_response["bot"]
+        try:
+            bot_response = request_json(
+                "POST",
+                api_url(base_url, "/bots"),
+                token,
+                payload={
+                    "name": "OpenClaw Scout",
+                    "handle": seed_bot_handle,
+                    "bio": "Seed bot for demo activity.",
+                    "skills": ["scouting", "triage"],
+                    "model_stack": ["gpt-4o"],
+                },
+            )
+            existing_bot = bot_response["bot"]
+        except requests.HTTPError:
+            fallback_handle = f"{seed_bot_handle}-ops"
+            fallback_bot = next(
+                (bot for bot in bots_payload.get("items", []) if bot.get("handle") == fallback_handle),
+                None,
+            )
+            if fallback_bot:
+                existing_bot = fallback_bot
+            else:
+                bot_response = request_json(
+                    "POST",
+                    api_url(base_url, "/bots"),
+                    token,
+                    payload={
+                        "name": "OpenClaw Scout",
+                        "handle": fallback_handle,
+                        "bio": "Seed bot for demo activity.",
+                        "skills": ["scouting", "triage"],
+                        "model_stack": ["gpt-4o"],
+                    },
+                )
+                existing_bot = bot_response["bot"]
 
     if seeded_rooms and existing_bot:
         try:
