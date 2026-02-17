@@ -10,7 +10,7 @@ from pathlib import Path
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timezone, timedelta
-from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+from backend.stripe_integration import StripeCheckout, CheckoutSessionRequest
 from arq import create_pool
 from arq.connections import RedisSettings
 from cryptography.fernet import Fernet
@@ -1321,3 +1321,134 @@ async def shutdown_db_client():
     if redis_pool:
         redis_pool.close()
     client.close()
+
+# ============================================
+# BOT PRESENCE & REPUTATION ENDPOINTS
+# ============================================
+
+@api_router.post("/bots/{bot_id}/heartbeat")
+async def bot_heartbeat(bot_id: str, payload: dict = None):
+    """Update bot presence - called periodically by connected bots"""
+    now = now_iso()
+    await db.bots.update_one(
+        {"id": bot_id},
+        {
+            "$set": {
+                "status": "online",
+                "last_seen_at": now,
+                "heartbeat_at": now,
+            }
+        }
+    )
+    return {"status": "online", "heartbeat_at": now}
+
+
+@api_router.get("/bots/{bot_id}/reputation")
+async def get_bot_reputation(bot_id: str):
+    """Get computed reputation score for a bot"""
+    bot = await db.bots.find_one({"id": bot_id}, {"_id": 0})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Calculate reputation metrics
+    bounties_completed = await db.bounties.count_documents({
+        "assigned_bot_id": bot_id,
+        "status": "closed_completed"
+    })
+    
+    successful_handshakes = await db.bots.count_documents({
+        "id": bot_id,
+        "handshake_verified_at": {"$ne": None}
+    })
+    
+    rooms_joined = await db.room_members.count_documents({
+        "member_id": bot_id,
+        "member_type": "bot"
+    })
+    
+    messages_sent = await db.messages.count_documents({
+        "sender_id": bot_id,
+        "sender_type": "bot"
+    })
+    
+    # Reputation algorithm (0-100)
+    reputation_score = min(100, (
+        (bounties_completed * 10) +
+        (successful_handshakes * 5) +
+        (rooms_joined * 2) +
+        min(messages_sent // 10, 10)
+    ))
+    
+    return {
+        "score": reputation_score,
+        "level": "New" if reputation_score < 20 else "Junior" if reputation_score < 50 else "Senior" if reputation_score < 80 else "Elite",
+        "metrics": {
+            "bounties_completed": bounties_completed,
+            "successful_handshakes": successful_handshakes,
+            "rooms_joined": rooms_joined,
+            "messages_sent": messages_sent
+        }
+    }
+
+
+@api_router.get("/bots/{bot_id}/presence")
+async def get_bot_presence(bot_id: str):
+    """Get real-time presence status for a bot"""
+    bot = await db.bots.find_one({"id": bot_id}, {"_id": 0, "status": 1, "last_seen_at": 1})
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+    
+    # Determine presence status
+    status = bot.get("status", "unknown")
+    last_seen = bot.get("last_seen_at")
+    
+    if last_seen:
+        last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        seconds_ago = (now - last_seen_dt).total_seconds()
+        
+        if seconds_ago > 300:  # 5 minutes
+            status = "away"
+        elif status == "online":
+            # Check if truly online via heartbeat
+            heartbeat_at = bot.get("heartbeat_at")
+            if heartbeat_at:
+                heartbeat_dt = datetime.fromisoformat(heartbeat_at.replace("Z", "+00:00"))
+                if (now - heartbeat_dt).total_seconds() > 60:
+                    status = "idle"
+    
+    return {
+        "status": status,
+        "last_seen_at": last_seen,
+        "seconds_ago": seconds_ago if last_seen else None
+    }
+
+
+@api_router.get("/bots")
+async def list_bots(
+    status: Optional[str] = Query(None),
+    skill: Optional[str] = Query(None),
+    user: Dict[str, Any] = Depends(require_active_member)
+):
+    """List all bots with optional filtering"""
+    query = {}
+    if status:
+        query["status"] = status
+    if skill:
+        query["skills"] = {"$in": [skill]}
+    
+    bots = await db.bots.find(query, {"_id": 0}).to_list(100)
+    
+    # Enrich with presence info
+    enriched_bots = []
+    for bot in bots:
+        bot_presence = {
+            "status": bot.get("status", "unknown"),
+            "last_seen_at": bot.get("last_seen_at")
+        }
+        enriched_bots.append({
+            **bot,
+            "presence": bot_presence
+        })
+    
+    return {"items": enriched_bots}
