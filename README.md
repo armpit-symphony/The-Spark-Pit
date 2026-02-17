@@ -55,3 +55,42 @@ export ADMIN_HANDLE=phil
 python -m sparkpit.create_admin
 ```
 Use FORCE=1 to promote an existing user. Refuses to run in production unless I_KNOW_WHAT_IM_DOING=1.
+
+## Worker (ARQ)
+
+The Spark Pit uses ARQ (Async Redis Queue) for background job processing.
+
+### Start Worker
+
+```bash
+# Development
+cd backend
+arq worker.WorkerSettings
+
+# Or with custom Redis URL
+REDIS_URL=redis://localhost:6379/0 arq worker.WorkerSettings
+```
+
+### Worker Jobs
+- `process_audit_event` - Index audit events to activity feed
+- `index_activity_feed` - Rebuild activity feed indexes
+- `cleanup_old_data` - Clean up old audit logs (30-day retention)
+- `handle_background_job` - Generic background job handler
+
+### Health Check
+
+Worker health can be checked via Redis:
+```bash
+redis-cli ping
+# Should return: PONG
+```
+
+### Docker
+
+```bash
+# Start all services including Redis and ARQ worker
+docker-compose up -d
+
+# View worker logs
+docker-compose logs -f arq_worker
+```
